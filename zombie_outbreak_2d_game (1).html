@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Zombie Outbreak 2D</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js CDN for Audio Synthesizer -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- Font Awesome Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Creepster&family=Teko:wght@400;600;700&display=swap');
+
+        body {
+            font-family: 'Teko', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            overflow: hidden;
+            background-color: #0d0f12;
+        }
+
+        .font-zombie {
+            font-family: 'Creepster', cursive;
+        }
+
+        /* Custom Scanline CRT Effect */
+        .scanlines {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.03),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.03)
+            );
+            background-size: 100% 3px, 6px 100%;
+            pointer-events: none;
+        }
+
+        /* Glow effects for text */
+        .glow-red {
+            text-shadow: 0 0 10px rgba(239, 68, 68, 0.7), 0 0 20px rgba(239, 68, 68, 0.5);
+        }
+
+        .touch-btn {
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            backdrop-filter: blur(4px);
+            touch-action: manipulation;
+        }
+
+        .touch-btn:active {
+            background: rgba(239, 68, 68, 0.4);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen relative overflow-hidden bg-slate-950 text-white flex flex-col items-center justify-center">
+
+    <!-- CRT Scanline overlay -->
+    <div class="scanlines absolute inset-0 z-10 pointer-events-none"></div>
+
+    <!-- Main Game Canvas Container -->
+    <div id="game-container" class="relative w-full h-full flex items-center justify-center overflow-hidden">
+        <canvas id="gameCanvas" class="block bg-slate-900 cursor-crosshair"></canvas>
+
+        <!-- TOP HUD PANEL -->
+        <div id="hud" class="hidden absolute top-4 left-4 right-4 z-20 flex justify-between items-start pointer-events-none text-xl sm:text-2xl tracking-wider">
+            <!-- Health & Ammo Stats -->
+            <div class="flex flex-col gap-2 bg-slate-900/80 border border-slate-700/60 p-3 rounded-xl backdrop-blur-md min-w-[180px]">
+                <!-- Health Bar -->
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-heart text-red-500 animate-pulse"></i>
+                    <div class="w-28 sm:w-44 h-4 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                        <div id="health-bar" class="h-full bg-gradient-to-r from-red-600 to-emerald-500 transition-all duration-200" style="width: 100%;"></div>
+                    </div>
+                    <span id="health-text" class="text-sm font-bold ml-1">100 HP</span>
+                </div>
+                
+                <!-- Ammo Counter -->
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-burst text-amber-400"></i>
+                    <span class="text-slate-300">AMMO:</span>
+                    <span id="ammo-text" class="font-bold text-amber-400 text-2xl">30 / 120</span>
+                </div>
+
+                <!-- Weapon Name -->
+                <div class="flex items-center gap-2 text-xs text-slate-400 border-t border-slate-800 pt-1 mt-1">
+                    <span>SENJATA:</span>
+                    <span id="weapon-name" class="text-sky-400 font-semibold tracking-wider">PISTOL</span>
+                </div>
+            </div>
+
+            <!-- Wave & Score Info -->
+            <div class="flex flex-col items-center bg-slate-900/80 border border-slate-700/60 px-6 py-2 rounded-xl backdrop-blur-md">
+                <div class="text-xs text-slate-400 tracking-widest uppercase">GELOMBANG</div>
+                <div id="wave-text" class="text-3xl sm:text-4xl font-extrabold text-red-500 glow-red">1</div>
+                <div id="wave-status" class="text-xs text-emerald-400 animate-pulse">SIAP...</div>
+            </div>
+
+            <!-- Score & Kills -->
+            <div class="flex flex-col items-end bg-slate-900/80 border border-slate-700/60 p-3 rounded-xl backdrop-blur-md min-w-[140px]">
+                <div class="flex items-center gap-2">
+                    <span class="text-slate-400 text-sm">SKOR:</span>
+                    <span id="score-text" class="font-bold text-amber-300 text-2xl">0</span>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-400">
+                    <span>KILL:</span>
+                    <span id="kills-text" class="text-slate-200 font-bold">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- MOBILE TOUCH CONTROLS OVERLAY -->
+        <div id="mobile-controls" class="hidden absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-6">
+            <div class="flex justify-end pointer-events-auto">
+                <button id="btn-reload" class="touch-btn w-14 h-14 rounded-full flex items-center justify-center text-white text-xl active:bg-slate-700">
+                    <i class="fa-solid fa-rotate-right"></i>
+                </button>
+            </div>
+
+            <div class="flex justify-between items-end w-full">
+                <div id="dpad" class="grid grid-cols-3 gap-2 w-36 h-36 pointer-events-auto">
+                    <div></div>
+                    <button id="btn-up" class="touch-btn rounded-lg flex items-center justify-center text-2xl"><i class="fa-solid fa-arrow-up"></i></button>
+                    <div></div>
+                    <button id="btn-left" class="touch-btn rounded-lg flex items-center justify-center text-2xl"><i class="fa-solid fa-arrow-left"></i></button>
+                    <div class="touch-btn rounded-lg opacity-20"></div>
+                    <button id="btn-right" class="touch-btn rounded-lg flex items-center justify-center text-2xl"><i class="fa-solid fa-arrow-right"></i></button>
+                    <div></div>
+                    <button id="btn-down" class="touch-btn rounded-lg flex items-center justify-center text-2xl"><i class="fa-solid fa-arrow-down"></i></button>
+                    <div></div>
+                </div>
+
+                <button id="btn-fire" class="touch-btn w-20 h-20 rounded-full bg-red-600/60 border-red-400 pointer-events-auto flex items-center justify-center text-3xl text-white active:scale-95 shadow-lg shadow-red-900/50">
+                    <i class="fa-solid fa-crosshairs"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- START MENU OVERLAY -->
+        <div id="start-screen" class="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-md p-6 text-center">
+            <h1 class="text-5xl sm:text-7xl font-zombie text-red-600 tracking-wider glow-red mb-2 animate-pulse">
+                ZOMBIE OUTBREAK
+            </h1>
+            <p class="text-slate-400 text-base sm:text-lg max-w-md mb-6">
+                Bertahan hidup dari serbuan gelombang zombie! Ambil senapan, medkit, dan amunisi untuk bertahan.
+            </p>
+
+            <div class="bg-slate-900/80 border border-slate-800 p-4 rounded-xl mb-6 text-left max-w-sm w-full text-slate-300 text-sm space-y-2">
+                <div class="font-bold text-red-400 border-b border-slate-800 pb-1 mb-2">KONTROL GAME:</div>
+                <div class="flex justify-between"><span>Gerak:</span> <span class="text-white font-mono">WASD / Tombol Panah</span></div>
+                <div class="flex justify-between"><span>Arahkan & Tembak:</span> <span class="text-white font-mono">Mouse / Klik Kiri</span></div>
+                <div class="flex justify-between"><span>Isi Peluru (Reload):</span> <span class="text-white font-mono">Tombol R</span></div>
+            </div>
+
+            <button id="start-btn" class="px-8 py-4 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-2xl rounded-xl shadow-lg shadow-red-600/40 hover:scale-105 transition-all cursor-pointer pointer-events-auto">
+                <i class="fa-solid fa-play mr-2"></i> MULAI PERMAINAN
+            </button>
+        </div>
+
+        <!-- GAME OVER OVERLAY -->
+        <div id="gameover-screen" class="hidden absolute inset-0 z-30 flex flex-col items-center justify-center bg-red-950/95 backdrop-blur-md p-6 text-center">
+            <h2 class="text-6xl sm:text-7xl font-zombie text-red-500 glow-red mb-2">ANDA MATI!</h2>
+            <p class="text-slate-300 text-xl mb-6">Wabah Zombie Berhasil Mengalahkan Anda.</p>
+
+            <div class="bg-slate-900/90 border border-red-900/50 p-6 rounded-2xl mb-8 w-full max-w-xs space-y-3">
+                <div class="flex justify-between text-lg">
+                    <span class="text-slate-400">Total Skor:</span>
+                    <span id="final-score" class="font-bold text-amber-400">0</span>
+                </div>
+                <div class="flex justify-between text-lg">
+                    <span class="text-slate-400">Zombie Terbunuh:</span>
+                    <span id="final-kills" class="font-bold text-red-400">0</span>
+                </div>
+                <div class="flex justify-between text-lg">
+                    <span class="text-slate-400">Gelombang Tertinggi:</span>
+                    <span id="final-wave" class="font-bold text-emerald-400">1</span>
+                </div>
+            </div>
+
+            <button id="restart-btn" class="px-8 py-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-2xl rounded-xl shadow-lg shadow-emerald-600/40 hover:scale-105 transition-all cursor-pointer pointer-events-auto">
+                <i class="fa-solid fa-rotate-right mr-2"></i> COBA LAGI
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Canvas & Context Setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // State & Variables
+        let isGameRunning = false;
+        let score = 0;
+        let kills = 0;
+        let wave = 1;
+        let lastSpawnTime = 0;
+        let lastShootTime = 0;
+
+        // Player Attributes
+        const player = {
+            x: 0,
+            y: 0,
+            radius: 18,
+            color: '#38bdf8',
+            speed: 4,
+            hp: 100,
+            maxHp: 100,
+            angle: 0,
+            weapon: 'PISTOL', // PISTOL, RIFLE
+            ammo: 30,
+            maxAmmoInMag: 30,
+            reserveAmmo: 120,
+            fireRate: 200, // ms between shots
+            isReloading: false
+        };
+
+        // Keyboard & Mouse State
+        const keys = {};
+        const mouse = { x: 0, y: 0, isDown: false };
+
+        // Entities Arrays
+        let bullets = [];
+        let zombies = [];
+        let particles = [];
+        let items = [];
+
+        // Audio Synthesizers (Tone.js)
+        let gunSynth, hitSynth, pickupSynth;
+
+        function initAudio() {
+            try {
+                if (typeof Tone !== 'undefined') {
+                    Tone.start();
+                    gunSynth = new Tone.NoiseSynth({
+                        noise: { type: 'white' },
+                        envelope: { attack: 0.005, decay: 0.1, sustain: 0 }
+                    }).toDestination();
+
+                    hitSynth = new Tone.MembraneSynth().toDestination();
+                    
+                    pickupSynth = new Tone.Synth({
+                        oscillator: { type: 'triangle' },
+                        envelope: { attack: 0.01, decay: 0.2, sustain: 0 }
+                    }).toDestination();
+                }
+            } catch (e) {
+                console.log("Audio non-critical initialization error:", e);
+            }
+        }
+
+        function playSound(type) {
+            if (!gunSynth) return;
+            try {
+                if (type === 'shoot') gunSynth.triggerAttackRelease("8n");
+                if (type === 'hit') hitSynth.triggerAttackRelease("C2", "8n");
+                if (type === 'pickup') pickupSynth.triggerAttackRelease("E5", "8n");
+            } catch (e) {}
+        }
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            if (!isGameRunning) {
+                player.x = canvas.width / 2;
+                player.y = canvas.height / 2;
+            }
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Event Listeners for Movement and Mouse
+        window.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            if (e.key.toLowerCase() === 'r') reloadWeapon();
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+                mouse.isDown = true;
+                shootBullet();
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            mouse.isDown = false;
+        });
+
+        // Mobile Controls Listeners
+        if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+            document.getElementById('mobile-controls').classList.remove('hidden');
+        }
+
+        const setupTouchBtn = (id, keyName) => {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyName] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName] = false; });
+        };
+
+        setupTouchBtn('btn-up', 'w');
+        setupTouchBtn('btn-down', 's');
+        setupTouchBtn('btn-left', 'a');
+        setupTouchBtn('btn-right', 'd');
+
+        document.getElementById('btn-reload')?.addEventListener('click', reloadWeapon);
+        document.getElementById('btn-fire')?.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            shootBullet();
+        });
+
+        function startGame() {
+            initAudio();
+
+            // Reset game variables
+            score = 0;
+            kills = 0;
+            wave = 1;
+            bullets = [];
+            zombies = [];
+            particles = [];
+            items = [];
+
+            // Reset Player
+            player.x = canvas.width / 2;
+            player.y = canvas.height / 2;
+            player.hp = 100;
+            player.ammo = 30;
+            player.reserveAmmo = 120;
+            player.weapon = 'PISTOL';
+            player.isReloading = false;
+
+            // Update UI
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('gameover-screen').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+
+            updateHUD();
+            isGameRunning = true;
+            requestAnimationFrame(gameLoop);
+        }
+
+        function reloadWeapon() {
+            if (player.isReloading || player.ammo === player.maxAmmoInMag || player.reserveAmmo <= 0) return;
+            player.isReloading = true;
+            document.getElementById('weapon-name').innerText = "RELOADING...";
+
+            setTimeout(() => {
+                const needed = player.maxAmmoInMag - player.ammo;
+                const toAdd = Math.min(needed, player.reserveAmmo);
+                player.ammo += toAdd;
+                player.reserveAmmo -= toAdd;
+                player.isReloading = false;
+                updateHUD();
+            }, 1200);
+        }
+
+        function updateHUD() {
+            document.getElementById('health-bar').style.width = `${Math.max(0, player.hp)}%`;
+            document.getElementById('health-text').innerText = `${Math.ceil(player.hp)} HP`;
+            document.getElementById('ammo-text').innerText = `${player.ammo} / ${player.reserveAmmo}`;
+            document.getElementById('score-text').innerText = score;
+            document.getElementById('kills-text').innerText = kills;
+            document.getElementById('wave-text').innerText = wave;
+            document.getElementById('weapon-name').innerText = player.weapon;
+        }
+
+        function shootBullet() {
+            if (!isGameRunning || player.isReloading) return;
+            if (player.ammo <= 0) {
+                reloadWeapon();
+                return;
+            }
+
+            const now = Date.now();
+            if (now - lastShootTime < player.fireRate) return;
+            lastShootTime = now;
+
+            player.ammo--;
+            updateHUD();
+            playSound('shoot');
+
+            const speed = 12;
+            bullets.push({
+                x: player.x,
+                y: player.y,
+                vx: Math.cos(player.angle) * speed,
+                vy: Math.sin(player.angle) * speed,
+                radius: 4,
+                color: '#f59e0b'
+            });
+        }
+
+        function spawnZombie() {
+            let x, y;
+            if (Math.random() < 0.5) {
+                x = Math.random() < 0.5 ? -30 : canvas.width + 30;
+                y = Math.random() * canvas.height;
+            } else {
+                x = Math.random() * canvas.width;
+                y = Math.random() < 0.5 ? -30 : canvas.height + 30;
+            }
+
+            const typeRand = Math.random();
+            let type = 'normal';
+            let speed = 1.8 + (wave * 0.1);
+            let hp = 30 + (wave * 5);
+            let radius = 16;
+            let color = '#22c55e'; // Green
+
+            if (typeRand > 0.75) {
+                // Fast Zombie
+                type = 'runner';
+                speed = 3.2 + (wave * 0.1);
+                hp = 15;
+                radius = 12;
+                color = '#eab308'; // Yellow
+            } else if (typeRand > 0.90) {
+                // Tank Zombie
+                type = 'tank';
+                speed = 1.0;
+                hp = 100 + (wave * 20);
+                radius = 24;
+                color = '#ef4444'; // Red
+            }
+
+            zombies.push({ x, y, speed, hp, maxHp: hp, radius, color, type });
+        }
+
+        function createBloodParticles(x, y, color) {
+            for (let i = 0; i < 8; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    radius: Math.random() * 3 + 1,
+                    alpha: 1,
+                    color: color
+                });
+            }
+        }
+
+        function gameOver() {
+            isGameRunning = false;
+            document.getElementById('hud').classList.add('hidden');
+            document.getElementById('gameover-screen').classList.remove('hidden');
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('final-kills').innerText = kills;
+            document.getElementById('final-wave').innerText = wave;
+        }
+
+        function gameLoop(timestamp) {
+            if (!isGameRunning) return;
+
+            // 1. CLEAR CANVAS
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Grid Map Drawing
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            const gridSize = 40;
+            for (let x = 0; x < canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+
+            // 2. MOVE PLAYER
+            let moveX = 0;
+            let moveY = 0;
+
+            if (keys['w'] || keys['arrowup']) moveY -= 1;
+            if (keys['s'] || keys['arrowdown']) moveY += 1;
+            if (keys['a'] || keys['arrowleft']) moveX -= 1;
+            if (keys['d'] || keys['arrowright']) moveX += 1;
+
+            if (moveX !== 0 && moveY !== 0) {
+                moveX *= 0.7071;
+                moveY *= 0.7071;
+            }
+
+            player.x += moveX * player.speed;
+            player.y += moveY * player.speed;
+
+            // Screen boundaries
+            player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+            player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+
+            // Aim angle calculations
+            player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+
+            // Auto-fire check
+            if (mouse.isDown) shootBullet();
+
+            // 3. SPAWN ZOMBIES
+            if (timestamp - lastSpawnTime > Math.max(400, 2000 - (wave * 150))) {
+                spawnZombie();
+                lastSpawnTime = timestamp;
+            }
+
+            // 4. UPDATE & DRAW BULLETS
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.x += b.vx;
+                b.y += b.vy;
+
+                // Render bullet
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+                ctx.fillStyle = b.color;
+                ctx.fill();
+
+                // Out of screen bounds
+                if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+                    bullets.splice(i, 1);
+                }
+            }
+
+            // 5. UPDATE & DRAW ZOMBIES
+            for (let i = zombies.length - 1; i >= 0; i--) {
+                const z = zombies[i];
+                const angle = Math.atan2(player.y - z.y, player.x - z.x);
+
+                z.x += Math.cos(angle) * z.speed;
+                z.y += Math.sin(angle) * z.speed;
+
+                // Render Zombie
+                ctx.save();
+                ctx.translate(z.x, z.y);
+                ctx.rotate(angle);
+                ctx.fillStyle = z.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, z.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Zombie Hands
+                ctx.fillStyle = '#15803d';
+                ctx.fillRect(z.radius - 2, -6, 8, 4);
+                ctx.fillRect(z.radius - 2, 2, 8, 4);
+                ctx.restore();
+
+                // Health bar above zombie
+                if (z.hp < z.maxHp) {
+                    ctx.fillStyle = '#334155';
+                    ctx.fillRect(z.x - 15, z.y - z.radius - 8, 30, 4);
+                    ctx.fillStyle = '#ef4444';
+                    ctx.fillRect(z.x - 15, z.y - z.radius - 8, (z.hp / z.maxHp) * 30, 4);
+                }
+
+                // Bullet collision with Zombie
+                for (let j = bullets.length - 1; j >= 0; j--) {
+                    const b = bullets[j];
+                    const dist = Math.hypot(b.x - z.x, b.y - z.y);
+
+                    if (dist < z.radius + b.radius) {
+                        z.hp -= 15;
+                        createBloodParticles(b.x, b.y, '#dc2626');
+                        playSound('hit');
+                        bullets.splice(j, 1);
+
+                        if (z.hp <= 0) {
+                            score += (z.type === 'tank' ? 50 : 20);
+                            kills++;
+
+                            // Drop item chance
+                            if (Math.random() < 0.2) {
+                                items.push({
+                                    x: z.x,
+                                    y: z.y,
+                                    type: Math.random() < 0.5 ? 'medkit' : 'ammo'
+                                });
+                            }
+
+                            // Wave Increment
+                            if (kills % 15 === 0) {
+                                wave++;
+                            }
+
+                            zombies.splice(i, 1);
+                            updateHUD();
+                            break;
+                        }
+                    }
+                }
+
+                // Zombie collision with Player
+                const distPlayer = Math.hypot(player.x - z.x, player.y - z.y);
+                if (distPlayer < player.radius + z.radius) {
+                    player.hp -= 0.4;
+                    updateHUD();
+                    if (player.hp <= 0) {
+                        gameOver();
+                        return;
+                    }
+                }
+            }
+
+            // 6. UPDATE & DRAW ITEMS
+            for (let i = items.length - 1; i >= 0; i--) {
+                const item = items[i];
+                ctx.beginPath();
+                ctx.arc(item.x, item.y, 8, 0, Math.PI * 2);
+                ctx.fillStyle = item.type === 'medkit' ? '#10b981' : '#f59e0b';
+                ctx.fill();
+
+                // Player pickup item
+                const dist = Math.hypot(player.x - item.x, player.y - item.y);
+                if (dist < player.radius + 8) {
+                    if (item.type === 'medkit') {
+                        player.hp = Math.min(player.maxHp, player.hp + 25);
+                    } else {
+                        player.reserveAmmo += 30;
+                    }
+                    playSound('pickup');
+                    updateHUD();
+                    items.splice(i, 1);
+                }
+            }
+
+            // 7. PARTICLES
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.alpha -= 0.03;
+
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, p.alpha);
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                if (p.alpha <= 0) particles.splice(i, 1);
+            }
+
+            // 8. RENDER PLAYER
+            ctx.save();
+            ctx.translate(player.x, player.y);
+            ctx.rotate(player.angle);
+
+            // Gun
+            ctx.fillStyle = '#64748b';
+            ctx.fillRect(10, 4, 14, 5);
+
+            // Body
+            ctx.fillStyle = player.color;
+            ctx.beginPath();
+            ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Hands
+            ctx.fillStyle = '#0284c7';
+            ctx.beginPath();
+            ctx.arc(10, -8, 4, 0, Math.PI * 2);
+            ctx.arc(10, 8, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Attach Button Listeners Directly
+        document.getElementById('start-btn').addEventListener('click', startGame);
+        document.getElementById('restart-btn').addEventListener('click', startGame);
+    </script>
+</body>
+</html>
